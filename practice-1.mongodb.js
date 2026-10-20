@@ -268,6 +268,270 @@
 
 // Q15. Find the top three customers by spending
 
+// db.orders.aggregate([
+//     {
+//         $lookup: {
+//             from: "products",
+//             localField: "productId",
+//             foreignField: "productId",
+//             as: "product"
+//         }
+//     },
+//     { $unwind: "$product" },
+//     {
+//         $group: {
+//             _id: "$customerId",
+//             totalSpent: {
+//                 $sum: {
+//                     $multiply: ["$quantity", "$product.price"]
+//                 }
+//             }
+//         }
+//     },
+//     { $sort: { totalSpent: -1 } },
+//     { $limit: 3 },
+//     {
+//         $lookup: {
+//             from: "customers",
+//             localField: "_id",
+//             foreignField: "customerId",
+//             as: "customer"
+//         }
+//     },
+//     { $unwind: "$customer" },
+//     {
+//         $project: {
+//             _id: 0,
+//             customerId: "$_id",
+//             customerName: "$customer.name",
+//             totalSpent: 1
+//         }
+//     }
+// ])
+
+
+
+// Q16.Average product price by category
+
+db.products.find()
+
+db.products.aggregate([
+    {
+        $group: {
+            _id: "$category",
+            avgPrice: {
+                $avg: "$price"
+            },
+            productCount: {
+                $sum: 1
+            }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            category: "$_id",
+            averagePrice: { $round: ["$avgPrice", 2] },
+            productCount: 1
+        }
+    },
+    { $sort: { averagePrice: -1 } }
+])
+
+
+
+// Q17.Find products above the average price
+
+db.products.aggregate([
+    {
+        $group: {
+            _id: null,
+            averagePrice: { $avg: "$price" },
+            products: { $push: "$$ROOT" }
+        }
+    },
+    { $unwind: "$products" },
+    {
+        $match: {
+            $expr: {
+                $gt: ["$products.price", "$averagePrice"]
+            }
+        }
+    },
+    {
+        $replaceRoot: {
+            newRoot: "$products"
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            productId: 1,
+            name: 1,
+            price: 1
+        }
+    }
+])
+
+
+
+// Q18 . Find Customer with more than two order
+
+db.orders.aggregate([
+    {
+        $group: {
+            _id: "$customerId",
+            totalOrder: {
+                $sum: 1
+            }
+        }
+    },
+    {
+        $match: {
+            totalOrder: {
+                $gt: 2
+            }
+        }
+    },
+    {
+        $sort: {
+            totalOrder: -1
+        }
+    }
+])
+
+
+// Q19 Join order with customer detsils
+
+db.orders.aggregate([
+    {
+        $lookup: {
+            from: "customers",
+            localField: "customerId",
+            foreignField: "customerId",
+            as: "customer"
+        }
+    },
+    {
+        $unwind: "$customer"
+    },
+    {
+        $project: {
+            _id: 0,
+            orderId: 1,
+            customerId: 1,
+            customerName: "$customer.name",
+            city: "$customer.city",
+            status: 1
+        }
+    }
+])
+
+
+// Q20 find customer who never placed an order
+
+db.customers.aggregate([
+    {
+        $lookup: {
+            from: "orders",
+            localField: "customerId",
+            foreignField: "customerId",
+            as: "orders"
+        }
+    },
+    {
+        $match: {
+            orders: { $eq: [] }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            customerId: 1,
+            name: 1
+        }
+    }
+])
+
+
+// Q21 . find the highest and lowest priced product in ach category
+
+db.products.aggregate([
+    {
+        $group: {
+            _id: "$category",
+            lowestPrice: {
+                $min: "$price"
+            },
+            highestPrice: {
+                $max: "$price"
+            }
+        }
+    },
+    {
+        $sort: {
+            lowestPrice: 1
+        }
+    }
+])
+
+
+// Q22 calculate delivered order value
+
+db.orders.aggregate([
+    {
+        $match: { status: "Delivered" }
+    },
+    {
+        $lookup: {
+            from: "products",
+            localField: "productId",
+            foreignField: "productId",
+            as: "product"
+        }
+    },
+    { $unwind: "$product" },
+    {
+        $group: {
+            _id: "$customerId",
+            deliveredValue: {
+                $sum: {
+                    $multiply: ["$quantity", "$product.price"]
+                }
+            }
+        }
+    },
+    { $sort: { deliveredValue: -1 } }
+])
+
+
+// Q23 Add a discount field
+
+db.products.aggregate([
+    {
+        $addFields: {
+            discountAmount: {
+                $multiply: ["$price", 0.10]
+            },
+            discountedPrice: {
+                $multiply: ["$price", 0.90]
+            }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            name: 1,
+            price: 1,
+            discountAmount: 1,
+            discountedPrice: 1
+        }
+    }
+])
+
+
+// Q24 Classify customers by total spending
+
 db.orders.aggregate([
     {
         $lookup: {
@@ -288,8 +552,77 @@ db.orders.aggregate([
             }
         }
     },
-    { $sort: { totalSpent: -1 } },
-    { $limit: 3 },
+    {
+        $addFields: {
+            spendingCategory: {
+                $switch: {
+                    branches: [
+                        {
+                            case: { $gte: ["$totalSpent", 70000] },
+                            then: "High"
+                        },
+                        {
+                            case: { $gte: ["$totalSpent", 30000] },
+                            then: "Medium"
+                        }
+                    ],
+                    default: "Low"
+                }
+            }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            customerId: "$_id",
+            totalSpent: 1,
+            spendingCategory: 1
+        }
+    }
+])
+
+// Q25 Complete order analytics report
+
+db.orders.aggregate([
+    {
+        $lookup: {
+            from: "products",
+            localField: "productId",
+            foreignField: "productId",
+            as: "product"
+        }
+    },
+    { $unwind: "$product" },
+    {
+        $group: {
+            _id: "$customerId",
+            totalOrders: { $sum: 1 },
+            totalQuantity: { $sum: "$quantity" },
+            totalSpent: {
+                $sum: {
+                    $multiply: ["$quantity", "$product.price"]
+                }
+            },
+            deliveredOrders: {
+                $sum: {
+                    $cond: [
+                        { $eq: ["$status", "Delivered"] },
+                        1,
+                        0
+                    ]
+                }
+            },
+            cancelledOrders: {
+                $sum: {
+                    $cond: [
+                        { $eq: ["$status", "Cancelled"] },
+                        1,
+                        0
+                    ]
+                }
+            }
+        }
+    },
     {
         $lookup: {
             from: "customers",
@@ -304,7 +637,13 @@ db.orders.aggregate([
             _id: 0,
             customerId: "$_id",
             customerName: "$customer.name",
-            totalSpent: 1
+            city: "$customer.city",
+            totalOrders: 1,
+            totalQuantity: 1,
+            totalSpent: 1,
+            deliveredOrders: 1,
+            cancelledOrders: 1
         }
-    }
+    },
+    { $sort: { totalSpent: -1 } }
 ])
